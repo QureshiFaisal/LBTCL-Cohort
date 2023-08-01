@@ -203,8 +203,8 @@ bump_parent_tx() {
             "vout": 0
         }
     ]' '{
-        "'$trader_address'": 25.0,
-        "'$miner_address'": 24.99989
+        "'$trader_address'": 70.0,
+        "'$miner_address'": 29.99989
     }')
 
     # Sign the raw transaction with the wallet
