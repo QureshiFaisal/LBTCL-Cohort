@@ -1,7 +1,7 @@
 
 #Downloading Bitcoin core, binaries and signatures
 
-wget https://bitcoincore.org/bin/bitcoin-core-25.0/bitcoin-25.0-arm64-apple-darwin.dmg
+wget https://bitcoincore.org/bin/bitcoin-core-25.0/bitcoin-25.0-x86_64-apple-darwin.dmg
 wget https://bitcoincore.org/bin/bitcoin-core-25.0/SHA256SUMS.asc
 wget https://bitcoincore.org/bin/bitcoin-core-25.0/SHA256SUMS
 
