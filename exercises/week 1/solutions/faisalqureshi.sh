@@ -38,120 +38,100 @@ echo "txindex=1" >> bitcoin.conf
   bitcoin-cli -getinfo
 
 
-# Creating Miner Wallet
+create_wallets() {
+    # Check if Miner wallet exists
+    if bitcoin-cli   -rpcwallet=Miner getwalletinfo >/dev/null 2>&1; then
+        bitcoin-cli     -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
+    else
+        bitcoin-cli    createwallet "Miner"
+        bitcoin-cli  -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
+    fi
 
-bitcoin-cli  createwallet Miner
+    # Check if Trader wallet exists
+    if bitcoin-cli  -rpcwallet=Trader getwalletinfo >/dev/null 2>&1; then
+        bitcoin-cli   -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
+    else
+        bitcoin-cli   createwallet "Trader"
+        bitcoin-cli  -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
+    fi
+    echo "**************************************"
+    echo -e "${GREEN}Trader and Miner wallets are ready${NC}"
+    echo "**************************************"
+}
 
+generate_miner_address_and_mine_blocks() {
 
-# Creating Trader Wallet
+echo "**************************************"
+echo -e "${GREEN}Generating blocks for Miner wallet${NC}"
+echo "**************************************"
 
-bitcoin-cli  createwallet Trader
+    miner_address=$(bitcoin-cli  -rpcwallet="Miner" getnewaddress "Mining Reward")
+    bitcoin-cli  -rpcwallet="Miner" generatetoaddress 104 $miner_address
+    original_balance=$(bitcoin-cli  -rpcwallet="Miner" getbalance)
 
+    # Check if the balance is equal to or greater than 150 BTC
+    if (( $(echo "$original_balance >= 150" | bc -l) )); then
+        echo -e "${GREEN}Miner wallet funded with at least 3 block rewards worth of satoshis (Starting balance: ${original_balance} BTC).${NC}"
+    else
+        echo -e "${ORANGE}Miner wallet balance is less than 150 BTC (Starting balance: ${original_balance} BTC).${NC}"
+    fi
+}
 
-# Loading Miner Wallet
+generate_trader_address() {
 
-bitcoin-cli  loadwallet Miner
+echo "**************************************"
+echo -e "${GREEN}Generating trader address${NC}"
+echo "**************************************"
 
-# Generating an address for Miner wallet with the label “Mining Reward”
+    trader_address=$(bitcoin-cli  -rpcwallet=Trader getnewaddress "Received")
+}
 
-miner_address=$(bitcoin-cli -rpcwallet=Miner getnewaddress "Mining Reward")
-
-# Mining Blocks
-
-bitcoin-cli  -rpcwallet=Miner generatetoaddress 101 $miner_address
-
-# Checking the balance to verify it is in immature state 
-
-bitcoin-cli  -rpcwallet=Miner getwalletinfo   
-
-# Creating an address labeled “Received” from Trader Wallet
-
-trader_address=$(bitcoin-cli  -rpcwallet=Trader getnewaddress "Received")
-
-# Loading Trader Wallet
-
-bitcoin-cli  loadwallet Trader
-
-# Printing the Miner Wallet Balance
-
-bitcoin-cli -rpcwallet=Miner getbalance
-
-
-# Sending a transaction paying 20 BTC from Miner wallet to Trader wallet
-
-
+send_amount(){
+# sending 20 BTC from Miner wallet to Trader wallet
 txid=$(bitcoin-cli   -rpcwallet=Miner sendtoaddress $trader_address 20)
 
-# Fetching the unconfirmed transaction in mempool
+}
 
+get_mempool(){
+
+# fetching the unconfirmed transaction
 bitcoin-cli  getmempoolentry $txid
 
-# Confirming the transaction by creating one more block
-
-bitcoin-cli -rpcwallet=Miner -generate 1 
-
-
-# Retrieving relevant information regarding the transaction
-
-transaction_info=$(bitcoin-cli -rpcwallet=Miner gettransaction $txid)
-
-: '
-Printing the following details:
-- Transaction ID (txid)
-- Trader’s Address
-- Input Amount
-- Sent Amount
-- Change Back Amount
-- Fees
-- Block height
-- Miner Balance
-- Trader Balance
-'
-format_amount() {
-  printf "%.8f" $(echo "$1" | sed 's/^-//')
 }
 
-txid=$(echo "$transaction_info" | grep -oE '"txid": "[^"]+"' | awk -F'"' '{print $4}')
-to_address=$(echo "$transaction_info" | grep -oE '"address": "[^"]+"' | awk -F'"' 'NR==1{print $4}')
+confirm_transaction(){
 
-sent_amount=$(format_amount $(echo "$transaction_info" | grep -oE '"amount": -?[0-9.]+' | awk -F': ' '{print $2}'))
-fee=$(format_amount $(echo "$transaction_info" | grep -oE '"fee": -?[0-9.]+' | awk -F': ' '{print $2}'))
-received_amount=$(echo "scale=8; $sent_amount - $fee" | bc)
-block_height=$(echo "$transaction_info" | grep -oE '"blockheight": [0-9]+' | awk -F': ' '{print $2}')
+  # confirming the transaction by creating 1 more block
+bitcoin-cli -rpcwallet=Miner -generate 1
+}
 
-miner_balance=$(bitcoin-cli -datadir=/Volumes/SANDISK_64/bitcoin -rpcwallet=Miner getbalance)
-trader_balance=$(bitcoin-cli -datadir=/Volumes/SANDISK_64/bitcoin -rpcwallet=Trader getbalance)
+print_info() {
+    transaction_info=$(bitcoin-cli -rpcwallet=Miner gettransaction $txid)
+    blockheight=$(echo "$transaction_info" | awk -F'"blockheight": ' '{print $2}' | awk -F, '{print $1}')
+    fees_paid=$(echo "scale=8; $amount * -1" | bc)  # Calculate fees_paid as the absolute value of amount
+    amount=$(echo "$transaction_info" | grep -o '"amount": -[0-9.]\+' | awk -F': ' '{print $2}' | tail -n 1)
 
-# Update balances after the transaction
-
-miner_balance=$(echo "scale=8; $miner_balance - $sent_amount + $received_amount" | bc)
-trader_balance=$(echo "scale=8; $trader_balance + $received_amount" | bc)
-
-echo "txid: $txid"
-echo "<From, Amount>: <Miner's Address>, $sent_amount BTC"
-echo "<Send, Amount>: <$to_address>, $received_amount BTC"
-echo "<Change, Amount>: <Miner's Address>, $fee BTC"
-echo "Fees: $fee BTC"
-echo "Block: Block height $block_height"
-echo "Miner Balance: $miner_balance BTC"
-echo "Trader Balance: $trader_balance BTC"
-
-# Printing Miner’s address and amount sent
-
-bitcoin-cli txid="b52e3b99f370273a9096010b171bba66282a520f9bb50517402579172d94fd68"
-transaction_info=$(bitcoin-cli -datadir=/Volumes/SANDISK_64/bitcoin -rpcwallet=Miner getrawtransaction $txid true)
-
-format_amount() {
-  printf "%.8f" $(echo "$1" | sed 's/^-//')
+    echo "**************************************"
+    echo "Transaction ID: $txid"
+    echo "From Address: ${miner_address}"
+    echo "To Address: ${trader_address}"
+    echo "Amount: $amount"
+    echo "Fee: $(printf "%.8f" ${fees_paid})"
+    echo "Block Height: $blockheight"
+    echo "Miner Balance: $(bitcoin-cli -rpcwallet="Miner" getbalance)"
+    echo "Trader Balance: $(bitcoin-cli -rpcwallet="Trader" getbalance)"
+    echo "**************************************"
 }
 
 
-vout_values=$(echo "$transaction_info" | grep -oE '"value": [0-9.]+' | awk -F': ' '{print $2}')
-sender_amount=$(format_amount $(echo "$vout_values" | awk 'NR==1{print $1}'))
+
+create_wallets
+generate_miner_address_and_mine_blocks
+generate_trader_address
+send_amount
+get_mempool
+confirm_transaction
+print_info
 
 
-sender_address=$(echo "$transaction_info" | grep -oE '"address": "[^"]+"' | awk -F'"' 'NR==1{print $2}')
-
-
-echo "Miner's Address: $sender_address, Amount: $sender_amount BTC"
 
