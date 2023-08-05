@@ -168,6 +168,79 @@ create_parent_tx() {
 }
 
 
+print_parent_info() {
+  parent_tx_details=$(bitcoin-cli getmempoolentry "$parent_txid")
+  fees=$(echo "$parent_tx_details" | grep -o '"base": [^,]*' | awk '{print $2}')
+  weight=$(echo "$parent_tx_details" | grep -o '"weight": [^,]*' | awk '{print $2}')
+
+  parent_tx_info=$(bitcoin-cli decoderawtransaction "$rawtx_parent")
+  # Extract the vin array using string manipulation
+  vin_start=$(echo "$parent_tx_info" | grep -n '"vin": \[' | cut -d':' -f1)
+  vin_end=$(echo "$parent_tx_info" | grep -n '"vout": \[' | cut -d':' -f1)
+  vin=$(echo "$parent_tx_info" | tail -n +"$vin_start" | head -n "$((vin_end - vin_start - 1))")
+
+  # Extract the txid fields from the vin array
+  traders_txid=$(echo "$vin" | grep -o '"txid": "[^"]*' | awk -F'"' 'NR==1{print $4}')
+  miners_txid=$(echo "$vin" | grep -o '"txid": "[^"]*' | awk -F'"' 'NR==2{print $4}')
+
+  # Extract the vout fields from the vin array
+  vout1=$(echo "$vin" | grep -o '"vout": [0-9]*' | awk -F': ' 'NR==1{print $2}')
+  vout2=$(echo "$vin" | grep -o '"vout": [0-9]*' | awk -F': ' 'NR==2{print $2}')
+
+  vout_start=$(echo "$parent_tx_info" | grep -n '"vout": \[' | cut -d':' -f1)
+  vout_end=$(echo "$parent_tx_info" | grep -n ']' | cut -d':' -f1 | sed -n '2p')
+  vout=$(echo "$parent_tx_info" | tail -n +"$vout_start" | head -n "$((vout_end - vout_start + 1))")
+
+  # Extract the "vout" array from the JSON
+  vout_array=$(echo "$parent_tx_info" | sed -n '/"vout": \[/,/]/p')
+
+  # Extract the values of the "amount" fields from the "vout" array
+  traders_amount=$(echo "$vout_array" | grep -o '"value": [0-9.]*' | awk '{print $2}')
+  miners_amount=$(echo "$vout_array" | grep -o '"value": [0-9.]*' | awk '{print $2}' | sed -n '2p')
+
+  # Run the bitcoin-cli command and store the output in a variable
+  output=$(bitcoin-cli -rpcwallet=Miner getaddressinfo "$miner_address")
+
+  # Extract the scriptPubKey field using string manipulation
+  traders_scriptpubkey=$(echo "$output" | grep -o '"scriptPubKey": "[^"]*' | awk -F'"' '{print $4}')
+
+  # Run the bitcoin-cli command and store the output in a variable
+  output=$(bitcoin-cli -rpcwallet=Trader getaddressinfo "$trader_address")
+
+  # Extract the scriptPubKey field using string manipulation
+  miners_scriptpubkey=$(echo "$output" | grep -o '"scriptPubKey": "[^"]*' | awk -F'"' '{print $4}')
+
+  # Construct the JSON string with variable values
+  JSON='{
+    "input": [
+      {
+        "txid": "'"${traders_txid}"'",
+        "vout": '"${vout1}"'
+      },
+      {
+        "txid": "'"${miners_txid}"'",
+        "vout": '"${vout2}"'
+      }
+    ],
+    "output": [
+      {
+        "script_pubkey": "'"${miners_scriptpubkey}"'",
+        "amount": '"${miners_amount}"'
+      },
+      {
+        "script_pubkey": "'"${traders_scriptpubkey}"'",
+        "amount": '"${traders_amount}"'
+      }
+    ],
+    "Fees": '"${fees}"',
+    "Weight": '"${weight}"'
+  }'
+
+  # Print the JSON
+  echo "$JSON"
+}
+
+
 
 
 create_child_tx(){
@@ -239,73 +312,14 @@ generate_miner_address_and_mine_blocks
 generate_trader_address
 extract_unspent_outputs
 create_parent_tx
+print_parent_info
 create_child_tx
 query_child
 bump_parent_tx
 query_child2
 
 
-: '
-After the fee of the parent transaction is bumped the output states that the child transaction is not in the mempool.
-The reason seems to be that the parent transaction that it depended upon has now been replaced, and that invalidates the child transaction. Guys, do let me know if anyone else reached the same inference.
-'
 
-print_parent_info(){
+inference=$'\033[1;32mAfter the fee of the parent transaction is bumped, the output states that the child transaction is not in the mempool.\n\nThe reason seems to be that the parent transaction it depended upon has now been replaced, and that invalidates the child transaction. Guys, do let me know if anyone else reached the same inference.\033[0m'
+echo -e "$inference"
 
-parent_txid=$(bitcoin-cli -rpcwallet=Trader listtransactions | jq -r '.[0] | .txid')
-  rawt_tx=$(bitcoin-cli -rpcwallet=Trader gettransaction $parent_txid| jq -r '.hex')
-    parent_input_txid=($(bitcoin-cli decoderawtransaction $raw_tx | jq -r '.vin | .[] | .txid'))
-   parent_input_vout=($(bitcoin-cli decoderawtransaction $raw_tx | jq -r '.vin | .[] | .vout'))
-  parent_output_amount=($(bitcoin-cli decoderawtransaction $raw_tx | jq -r '.vout | .[] | .value'))
-  parent_output_spubkey=($(bitcoin-cli decoderawtransaction $raw_tx | jq -r '.vout | .[] | .scriptPubKey.hex'))
-    fees=$(bitcoin-cli -rpcwallet=Trader getmempoolentry $parent_txid | jq -r '.fees.base')
-   weight=$(bitcoin-cli -rpcwallet=Trader getmempoolentry $parent_txid | jq -r '.weight')
-
-#    echo "Parent txid: $parent_txid"
-#    echo "Parent input txid 1: ${parent_input_txid[0]}" 
-#    echo "Parent input txid 2: ${parent_input_txid[1]}"
-#    echo "Parent input vout 1: ${parent_input_vout[0]}" 
-#    echo "Parent input vout 2: ${parent_input_vout[1]}"
-#    echo "Parent output 1 amount: ${parent_output_amount[0]} BTC"
-#    echo "Parent output 2 amount: ${ parent_output_amount[1]} BTC"
-#    echo "Trader scriptPubKey: ${parent_output_spubkey[0]}"
-#    echo "Miner change scriptPubKey: ${ parent_output_spubkey[1]}"      
-#    echo "Parent transaction fees: $fees BTC"
-#    echo "Parent transaction weight: $((weight/4)) vbytes"
-
-
-
-  JSON='{
-      "input": [
-        {
-          "txid": "'${parent_input_txid[0]}'",
-          "vout": "'${parent_input_vout[0]}'"
-        },
-        {
-          "txid": "'${parent_input_txid[1]}'",
-          "vout": "'${parent_input_vout[1]}'"
-        }
-      ],
-      "output": [
-        {
-          "script_pubkey": "'${parent_output_spubkey[1]}'",
-          "amount": "'${parent_output_amount[1]}'"
-        },
-        {
-          "script_pubkey": "'${parent_output_spubkey[0]}'",
-          "amount": "'${parent_output_amount[0]}'"
-        }
-      ],
-      "Fees": "'$fees'",
-      "Weight": "'$weight' (weight of the tx in vbytes)"
-    }'
-
-    # Print the JSON to the terminal
-    echo $JSON
-}
-
-
-# executing functions
-
-
-print_parent_info
