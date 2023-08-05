@@ -1,4 +1,10 @@
 
+
+GREEN='\033[32m'
+ORANGE='\033[35m'
+NC='\033[0m'
+
+
 #Downloading Bitcoin core, binaries and signatures
 
 wget https://bitcoincore.org/bin/bitcoin-core-25.0/bitcoin-25.0-x86_64-apple-darwin.dmg
