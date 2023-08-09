@@ -29,85 +29,60 @@ fi
 }
 
 
+bitcoin_data_dir="$HOME/.bitcoin/"
+mkdir -p "$bitcoin_data_dir"
 
+create_conf(){
+echo "regtest=1" >> "$bitcoin_data_dir/bitcoin.conf"
+echo "fallbackfee=0.0001" >> "$bitcoin_data_dir/bitcoin.conf"
+echo "server=1" >> "$bitcoin_data_dir/bitcoin.conf"
+echo "txindex=1" >> "$bitcoin_data_dir/bitcoin.conf"
 
-create_conf_file() {
-    echo "**************************************"
-	echo -e "${ORANGE}Creating bitcoin.conf file${NC}"
-    echo "**************************************"
-	cd /Users/$USER/Library/Application\ Support/Bitcoin
-
-	# Create a file called bitcoin.conf
-	touch bitcoin.conf
-
-	echo "regtest=1" >> bitcoin.conf
-	echo "fallbackfee=0.0001" >> bitcoin.conf
-	echo "server=1" >> bitcoin.conf
-	echo "txindex=1" >> bitcoin.conf
 }
 
 
-delete_regtest_dir() {
-    echo "**************************************"
-	echo -e "${ORANGE}Deleting regtest directory if exists${NC}"
-    echo "**************************************"
-	if [ -d "/Users/$USER/Library/Application\ Support/Bitcoin/regtest" ]; then
-		rm -rf /Users/$USER/Library/Application\ Support/Bitcoin/regtest
-	fi
-}
-
-start_bitcoind() {
-    echo "**************************************"
-	echo -e "${ORANGE}Starting bitcoind${NC}"
-    echo "**************************************"
-	# Start bitcoind in the background
-	bitcoind -daemon
-	# Wait for 10 seconds
-	sleep 10
-	# Now you can run bitcoin-cli getinfo
-	bitcoin-cli -getinfo
+start_bitcoind(){
+bitcoind -datadir=$bitcoin_data_dir -daemon
+sleep 5
 }
 
 
 
 create_wallets() {
-echo "**************************************"
-echo -e "${ORANGE}Creating two wallets${NC}"
-echo "**************************************"
+    echo "**************************************"
+    echo -e "${ORANGE}Creating two wallets${NC}"
+    echo "**************************************"
 
     # Check if Miner wallet exists
-    if bitcoin-cli  -rpcwallet=Miner getwalletinfo >/dev/null 2>&1; then
-        bitcoin-cli   -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
+    if bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner getwalletinfo >/dev/null 2>&1; then
+        bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
     else
-        bitcoin-cli  createwallet "Miner"
-        bitcoin-cli  -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
+        bitcoin-cli -datadir=$bitcoin_data_dir createwallet "Miner"
+        bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
     fi
 
     # Check if Trader wallet exists
-    if bitcoin-cli -rpcwallet=Trader getwalletinfo >/dev/null 2>&1; then
-        bitcoin-cli -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
+    if bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Trader getwalletinfo >/dev/null 2>&1; then
+        bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
     else
-        bitcoin-cli  createwallet "Trader"
-        bitcoin-cli  -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
+        bitcoin-cli -datadir=$bitcoin_data_dir createwallet "Trader"
+        bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
     fi
+
     echo "**************************************"
     echo -e "${ORANGE}Trader and Miner wallets are ready${NC}"
     echo "**************************************"
 }
 
 
-
-
-
 generate_miner_address_and_mine_blocks() {
+    echo "**************************************"
+    echo -e "${ORANGE}Generating blocks for Miner wallet${NC}"
+    echo "**************************************"
 
-echo "**************************************"
-echo -e "${ORANGE}Generating blocks for Miner wallet${NC}"
-echo "**************************************"
-
-    miner_address=$(bitcoin-cli  -rpcwallet="Miner" getnewaddress "Mining Reward")
-    bitcoin-cli  -rpcwallet="Miner" generatetoaddress 104 $miner_address
-    original_balance=$(bitcoin-cli  -rpcwallet="Miner" getbalance)
+    miner_address=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet="Miner" getnewaddress "Mining Reward")
+    bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet="Miner" generatetoaddress 103 $miner_address
+    original_balance=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet="Miner" getbalance)
 
     # Check if the balance is equal to or greater than 150 BTC
     if (( $(echo "$original_balance >= 150" | bc -l) )); then
@@ -118,30 +93,27 @@ echo "**************************************"
 }
 
 
-
+# Function to generate trader address
 generate_trader_address() {
-    trader_address=$(bitcoin-cli  -rpcwallet=Trader getnewaddress "Received")
-      echo -e "${ORANGE}Trader address generated.${NC}"
+    trader_address=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Trader getnewaddress "Received")
+    echo -e "${ORANGE}Trader address generated.${NC}"
 }
 
 
-extract_unspent_outputs(){
-unspent_outputs=$(bitcoin-cli   -rpcwallet=Miner listunspent 0)
 
-# Extract the txid values of the first and second UTXOs using pure Bash
+extract_unspent_outputs() {
+    unspent_outputs=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner listunspent 0)
+
     txid1=$(echo "$unspent_outputs" | grep -oE '"txid": "[^"]+"' | awk -F'"' '{print $4}' | sed -n 1p)
     txid2=$(echo "$unspent_outputs" | grep -oE '"txid": "[^"]+"' | awk -F'"' '{print $4}' | sed -n 2p)
 
- # Print the txid values to verify
     echo -e "${GREEN}First UTXO's txid: $txid1${NC}"
     echo -e "${GREEN}Second UTXO's txid: $txid2${NC}"
 }
 
 
-
 create_parent_tx() {
-    # Create the raw transaction
-    rawtx_parent=$(bitcoin-cli  -rpcwallet=Miner createrawtransaction '[
+    rawtx_parent=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner createrawtransaction '[
         {
             "txid": "'$txid1'",
             "vout": 0
@@ -155,96 +127,86 @@ create_parent_tx() {
         "'$miner_address'": 29.99999
     }')
 
-    # Sign the raw transaction with the wallet
-    output=$(bitcoin-cli  -rpcwallet=Miner signrawtransactionwithwallet "$rawtx_parent")
-
-    # Extract the signed raw transaction
+    output=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner signrawtransactionwithwallet "$rawtx_parent")
     signed_rawtx_parent=$(echo "$output" | grep -oE '"hex": "[^"]+"' | awk -F'"' '{print $4}')
 
-    # Send the signed raw transaction and get the parent_txid
-    parent_txid=$(bitcoin-cli  -rpcwallet=Miner sendrawtransaction "$signed_rawtx_parent")
+    parent_txid=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner sendrawtransaction "$signed_rawtx_parent")
 
     echo -e "${GREEN}Parent Transaction ID: ${parent_txid}"
 }
 
 
+
 print_parent_info() {
-  parent_tx_details=$(bitcoin-cli getmempoolentry "$parent_txid")
-  fees=$(echo "$parent_tx_details" | grep -o '"base": [^,]*' | awk '{print $2}')
-  weight=$(echo "$parent_tx_details" | grep -o '"weight": [^,]*' | awk '{print $2}')
+    parent_tx_details=$(bitcoin-cli -datadir=$bitcoin_data_dir getmempoolentry "$parent_txid")
+    fees=$(echo "$parent_tx_details" | grep -o '"base": [^,]*' | awk '{print $2}')
+    weight=$(echo "$parent_tx_details" | grep -o '"weight": [^,]*' | awk '{print $2}')
 
-  parent_tx_info=$(bitcoin-cli decoderawtransaction "$rawtx_parent")
-  # Extract the vin array using string manipulation
-  vin_start=$(echo "$parent_tx_info" | grep -n '"vin": \[' | cut -d':' -f1)
-  vin_end=$(echo "$parent_tx_info" | grep -n '"vout": \[' | cut -d':' -f1)
-  vin=$(echo "$parent_tx_info" | tail -n +"$vin_start" | head -n "$((vin_end - vin_start - 1))")
+    parent_tx_info=$(bitcoin-cli -datadir=$bitcoin_data_dir decoderawtransaction "$rawtx_parent")
+    vin_start=$(echo "$parent_tx_info" | grep -n '"vin": \[' | cut -d':' -f1)
+    vin_end=$(echo "$parent_tx_info" | grep -n '"vout": \[' | cut -d':' -f1)
+    vin=$(echo "$parent_tx_info" | tail -n +"$vin_start" | head -n "$((vin_end - vin_start - 1))")
 
-  # Extract the txid fields from the vin array
-  traders_txid=$(echo "$vin" | grep -o '"txid": "[^"]*' | awk -F'"' 'NR==1{print $4}')
-  miners_txid=$(echo "$vin" | grep -o '"txid": "[^"]*' | awk -F'"' 'NR==2{print $4}')
+    # Extract the txid values from the vin array
+    traders_txid=$(echo "$vin" | grep -oE '"txid": "[^"]*' | awk -F'"' 'NR==1{print $4}')
+    miners_txid=$(echo "$vin" | grep -oE '"txid": "[^"]*' | awk -F'"' 'NR==2{print $4}')
 
-  # Extract the vout fields from the vin array
-  vout1=$(echo "$vin" | grep -o '"vout": [0-9]*' | awk -F': ' 'NR==1{print $2}')
-  vout2=$(echo "$vin" | grep -o '"vout": [0-9]*' | awk -F': ' 'NR==2{print $2}')
+    # Extract the vout values from the vin array
+    vout1=$(echo "$vin" | grep -oE '"vout": [0-9]*' | awk -F': ' 'NR==1{print $2}')
+    vout2=$(echo "$vin" | grep -oE '"vout": [0-9]*' | awk -F': ' 'NR==2{print $2}')
 
-  vout_start=$(echo "$parent_tx_info" | grep -n '"vout": \[' | cut -d':' -f1)
-  vout_end=$(echo "$parent_tx_info" | grep -n ']' | cut -d':' -f1 | sed -n '2p')
-  vout=$(echo "$parent_tx_info" | tail -n +"$vout_start" | head -n "$((vout_end - vout_start + 1))")
+    # Extract the vout array from the parent transaction info
+    vout_start=$(echo "$parent_tx_info" | grep -n '"vout": \[' | cut -d':' -f1)
+    vout_end=$(echo "$parent_tx_info" | grep -n ']' | cut -d':' -f1 | sed -n '2p')
+    vout=$(echo "$parent_tx_info" | tail -n +"$vout_start" | head -n "$((vout_end - vout_start + 1))")
 
-  # Extract the "vout" array from the JSON
-  vout_array=$(echo "$parent_tx_info" | sed -n '/"vout": \[/,/]/p')
+    # Extract the "vout" array from the JSON
+    vout_array=$(echo "$parent_tx_info" | sed -n '/"vout": \[/,/]/p')
 
-  # Extract the values of the "amount" fields from the "vout" array
-  traders_amount=$(echo "$vout_array" | grep -o '"value": [0-9.]*' | awk '{print $2}')
-  miners_amount=$(echo "$vout_array" | grep -o '"value": [0-9.]*' | awk '{print $2}' | sed -n '2p')
+    # Extract the values of the "amount" fields from the "vout" array
+    traders_amount=$(echo "$vout_array" | grep -o '"value": [0-9.]*' | awk '{print $2}')
+    miners_amount=$(echo "$vout_array" | grep -o '"value": [0-9.]*' | awk '{print $2}' | sed -n '2p')
 
-  # Run the bitcoin-cli command and store the output in a variable
-  output=$(bitcoin-cli -rpcwallet=Miner getaddressinfo "$miner_address")
+    # Get scriptPubKey for trader and miner addresses
+    traders_scriptpubkey=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Trader getaddressinfo "$trader_address" | grep -oE '"scriptPubKey": "[^"]*' | awk -F'"' '{print 
+$4}')
+    miners_scriptpubkey=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner getaddressinfo "$miner_address" | grep -oE '"scriptPubKey": "[^"]*' | awk -F'"' '{print $4}')
 
-  # Extract the scriptPubKey field using string manipulation
-  traders_scriptpubkey=$(echo "$output" | grep -o '"scriptPubKey": "[^"]*' | awk -F'"' '{print $4}')
+    # Construct the JSON string with variable values
+    JSON='{
+        "input": [
+            {
+                "txid": "'"${traders_txid}"'",
+                "vout": '"${vout1}"'
+            },
+            {
+                "txid": "'"${miners_txid}"'",
+                "vout": '"${vout2}"'
+            }
+        ],
+        "output": [
+            {
+                "script_pubkey": "'"${miners_scriptpubkey}"'",
+                "amount": '"${miners_amount}"'
+            },
+            {
+                "script_pubkey": "'"${traders_scriptpubkey}"'",
+                "amount": '"${traders_amount}"'
+            }
+        ],
+        "Fees": '"${fees}"',
+        "Weight": '"${weight}"'
+    }'
 
-  # Run the bitcoin-cli command and store the output in a variable
-  output=$(bitcoin-cli -rpcwallet=Trader getaddressinfo "$trader_address")
-
-  # Extract the scriptPubKey field using string manipulation
-  miners_scriptpubkey=$(echo "$output" | grep -o '"scriptPubKey": "[^"]*' | awk -F'"' '{print $4}')
-
-  # Construct the JSON string with variable values
-  JSON='{
-    "input": [
-      {
-        "txid": "'"${traders_txid}"'",
-        "vout": '"${vout1}"'
-      },
-      {
-        "txid": "'"${miners_txid}"'",
-        "vout": '"${vout2}"'
-      }
-    ],
-    "output": [
-      {
-        "script_pubkey": "'"${miners_scriptpubkey}"'",
-        "amount": '"${miners_amount}"'
-      },
-      {
-        "script_pubkey": "'"${traders_scriptpubkey}"'",
-        "amount": '"${traders_amount}"'
-      }
-    ],
-    "Fees": '"${fees}"',
-    "Weight": '"${weight}"'
-  }'
-
-  # Print the JSON
-  echo "$JSON"
+    # Print the JSON
+    echo "$JSON"
 }
 
 
 
 
-create_child_tx(){
-child_raw_tx=$(bitcoin-cli  -rpcwallet=Miner createrawtransaction "[
+create_child_tx() {
+    child_raw_tx=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner createrawtransaction "[
         {
             \"txid\": \"$parent_txid\",
             \"vout\": 1
@@ -252,21 +214,24 @@ child_raw_tx=$(bitcoin-cli  -rpcwallet=Miner createrawtransaction "[
     ]" "{
         \"$miner_address\": 29.99998
     }")
-output_child=$(bitcoin-cli  -rpcwallet=Miner signrawtransactionwithwallet "$child_raw_tx")
-  signed_rawtx_child=$(echo "$output_child" | grep -oE '"hex": "[^"]+"' | awk -F'"' '{print $4}')
- child_txid=$(bitcoin-cli  -rpcwallet=Miner sendrawtransaction "$signed_rawtx_child")
- echo -e "${GREEN}Child Transaction ID: $child_txid${NC}"
+    output_child=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner signrawtransactionwithwallet "$child_raw_tx")
+    signed_rawtx_child=$(echo "$output_child" | grep -oE '"hex": "[^"]+"' | awk -F'"' '{print $4}')
+
+    child_txid=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner sendrawtransaction "$signed_rawtx_child")
+
+    echo -e "${GREEN}Child Transaction ID: $child_txid${NC}"
 }
 
-query_child()
-{
-child_query1=$(bitcoin-cli  -rpcwallet=Miner getmempoolentry $child_txid)
 
+query_child() {
+    child_query1=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner getmempoolentry $child_txid)
 }
+
+
 
 bump_parent_tx() {
     # Create the raw transaction
-    rawtx_parent=$(bitcoin-cli -rpcwallet=Miner createrawtransaction '[
+    rawtx_parent=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner createrawtransaction '[
         {
             "txid": "'$txid1'",
             "vout": 0
@@ -281,31 +246,35 @@ bump_parent_tx() {
     }')
 
     # Sign the raw transaction with the wallet
-    output2=$(bitcoin-cli -rpcwallet=Miner signrawtransactionwithwallet "$rawtx_parent")
+    output2=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner signrawtransactionwithwallet "$rawtx_parent")
 
     # Extract the signed raw transaction
     signed_rawtx_parent=$(echo "$output2" | grep -oE '"hex": "[^"]+"' | awk -F'"' '{print $4}')
 
     # Send the signed raw transaction and get the parent_txid
-    parent_txid=$(bitcoin-cli -rpcwallet=Miner sendrawtransaction "$signed_rawtx_parent")
+    parent_txid=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner sendrawtransaction "$signed_rawtx_parent")
 
     echo "Parent Transaction ID after fee bump: ${parent_txid}"
 }
 
 
+query_child2() {
+    child_query1=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner getmempoolentry $child_txid)
+}
 
+stop_bitcoind(){
+bitcoin-cli -datadir=$bitcoin_data_dir stop
+}
 
-query_child2()
-{
-child_query1=$(bitcoin-cli  -rpcwallet=Miner getmempoolentry $child_txid)
+delete_temp_dir(){
 
+rm -rf $bitcoin_data_dir
 }
 
 
 download_bitcoin_core
 verify_binary_signatures
-create_conf_file
-delete_regtest_dir
+create_conf
 start_bitcoind
 create_wallets
 generate_miner_address_and_mine_blocks
@@ -317,6 +286,9 @@ create_child_tx
 query_child
 bump_parent_tx
 query_child2
+stop_bitcoind
+delete_temp_dir
+
 
 
 

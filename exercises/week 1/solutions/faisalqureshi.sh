@@ -27,117 +27,106 @@ else
 fi
 
 
-cd /Users/$USER/Library/Application\ Support/Bitcoin
+bitcoin_data_dir="$HOME/.bitcoin/"
+mkdir -p "$bitcoin_data_dir"
 
-touch bitcoin.conf
+create_conf(){
+echo "regtest=1" >> "$bitcoin_data_dir/bitcoin.conf"
+echo "fallbackfee=0.0001" >> "$bitcoin_data_dir/bitcoin.conf"
+echo "server=1" >> "$bitcoin_data_dir/bitcoin.conf"
+echo "txindex=1" >> "$bitcoin_data_dir/bitcoin.conf"
 
-echo "regtest=1" >> bitcoin.conf
-echo "fallbackfee=0.0001" >> bitcoin.conf
-echo "server=1" >> bitcoin.conf
-echo "txindex=1" >> bitcoin.conf
-
-# Start bitcoind in the background
-  bitcoind -daemon
-  # Wait for 10 seconds
-  sleep 10
-  # Now you can run bitcoin-cli getinfo
-  bitcoin-cli -getinfo
-
-
-create_wallets() {
-    # Check if Miner wallet exists
-    if bitcoin-cli   -rpcwallet=Miner getwalletinfo >/dev/null 2>&1; then
-        bitcoin-cli     -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
-    else
-        bitcoin-cli    createwallet "Miner"
-        bitcoin-cli  -rpcwallet=Miner loadwallet "Miner" 2>/dev/null
-    fi
-
-    # Check if Trader wallet exists
-    if bitcoin-cli  -rpcwallet=Trader getwalletinfo >/dev/null 2>&1; then
-        bitcoin-cli   -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
-    else
-        bitcoin-cli   createwallet "Trader"
-        bitcoin-cli  -rpcwallet=Trader loadwallet "Trader" 2>/dev/null
-    fi
-    echo "**************************************"
-    echo -e "${GREEN}Trader and Miner wallets are ready${NC}"
-    echo "**************************************"
 }
 
-generate_miner_address_and_mine_blocks() {
 
-echo "**************************************"
-echo -e "${GREEN}Generating blocks for Miner wallet${NC}"
-echo "**************************************"
 
-    miner_address=$(bitcoin-cli  -rpcwallet="Miner" getnewaddress "Mining Reward")
-    bitcoin-cli  -rpcwallet="Miner" generatetoaddress 104 $miner_address
-    original_balance=$(bitcoin-cli  -rpcwallet="Miner" getbalance)
-
-    # Check if the balance is equal to or greater than 150 BTC
-    if (( $(echo "$original_balance >= 150" | bc -l) )); then
-        echo -e "${GREEN}Miner wallet funded with at least 3 block rewards worth of satoshis (Starting balance: ${original_balance} BTC).${NC}"
-    else
-        echo -e "${ORANGE}Miner wallet balance is less than 150 BTC (Starting balance: ${original_balance} BTC).${NC}"
-    fi
+start_bitcoin(){
+bitcoind -datadir=$bitcoin_data_dir -daemon
+sleep 5
 }
 
-generate_trader_address() {
 
-echo "**************************************"
-echo -e "${GREEN}Generating trader address${NC}"
-echo "**************************************"
+create_wallets(){
+bitcoin-cli -datadir=$bitcoin_data_dir createwallet Miner
 
-    trader_address=$(bitcoin-cli  -rpcwallet=Trader getnewaddress "Received")
+bitcoin-cli -datadir=$bitcoin_data_dir createwallet Trader
 }
+
+
+ generating_addresses(){
+miner_address=$(bitcoin-cli -rpcwallet=Miner -datadir=$bitcoin_data_dir getnewaddress) 
+
+trader_address=$(bitcoin-cli -rpcwallet=Trader -datadir=$bitcoin_data_dir getnewaddress) 
+}
+
+
+
+funding_miner(){
+bitcoin-cli -rpcwallet=Miner -datadir=$bitcoin_data_dir generatetoaddress 103 $miner_address
+}
+
 
 send_amount(){
 # sending 20 BTC from Miner wallet to Trader wallet
-txid=$(bitcoin-cli   -rpcwallet=Miner sendtoaddress $trader_address 20)
+txid=$(bitcoin-cli   -rpcwallet=Miner -datadir=$bitcoin_data_dir sendtoaddress $trader_address 20)
 
 }
+
 
 get_mempool(){
-
 # fetching the unconfirmed transaction
-bitcoin-cli  getmempoolentry $txid
-
+confirmed_transaction=$(bitcoin-cli  -datadir=$bitcoin_data_dir getmempoolentry $txid)
 }
 
-confirm_transaction(){
 
-  # confirming the transaction by creating 1 more block
-bitcoin-cli -rpcwallet=Miner -generate 1
+confirm_transaction(){
+bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner generatetoaddress 1 $miner_address
 }
 
 print_info() {
-    transaction_info=$(bitcoin-cli -rpcwallet=Miner gettransaction $txid)
-    blockheight=$(echo "$transaction_info" | awk -F'"blockheight": ' '{print $2}' | awk -F, '{print $1}')
-    fees_paid=$(echo "scale=8; $amount * -1" | bc)  # Calculate fees_paid as the absolute value of amount
+    transaction_info=$(bitcoin-cli -datadir=$bitcoin_data_dir -rpcwallet=Miner gettransaction $txid)
     amount=$(echo "$transaction_info" | grep -o '"amount": -[0-9.]\+' | awk -F': ' '{print $2}' | tail -n 1)
+    fee=$(echo "$confirmed_transaction" | sed -n 's/.*"base": \([0-9.]*\).*/\1/p')
+    blockheight=$(echo "$transaction_info" | awk -F'"blockheight": ' '{print $2}' | awk -F, '{print $1}')
+
+    if (( $(echo "$amount < 0" | bc -l) )); then
+        amount=$(echo "scale=8; $amount * -1" | bc)
+    fi
 
     echo "**************************************"
     echo "Transaction ID: $txid"
     echo "From Address: ${miner_address}"
     echo "To Address: ${trader_address}"
     echo "Amount: $amount"
-    echo "Fee: $(printf "%.8f" ${fees_paid})"
+    echo "Fee: $fee"
     echo "Block Height: $blockheight"
-    echo "Miner Balance: $(bitcoin-cli -rpcwallet="Miner" getbalance)"
-    echo "Trader Balance: $(bitcoin-cli -rpcwallet="Trader" getbalance)"
+    echo -n "Miner Balance: $(bitcoin-cli  -datadir=$bitcoin_data_dir -rpcwallet="Miner" getbalance)"
+    echo " | Trader Balance: $(bitcoin-cli  -datadir=$bitcoin_data_dir -rpcwallet="Trader" getbalance)"
     echo "**************************************"
 }
 
 
+stop_bitcoin(){
+bitcoin-cli -datadir=$bitcoin_data_dir stop
+}
 
+delete_temp_directory(){
+rm -rf $bitcoin_data_dir
+
+}
+
+
+create_conf
+start_bitcoin
 create_wallets
-generate_miner_address_and_mine_blocks
-generate_trader_address
+generating_addresses
+funding_miner
 send_amount
 get_mempool
 confirm_transaction
 print_info
+stop_bitcoin
+delete_temp_directory
 
 
 
