@@ -26,8 +26,7 @@ else
     echo "❌ Binary signature verification unsuccessful! Please check the integrity of your binary. 😞"
 fi
 
-
-bitcoin_data_dir="$HOME/.bitcoin/"
+bitcoin_data_dir="$HOME/tmp/faisal_bitcoin/"
 mkdir -p "$bitcoin_data_dir"
 
 create_conf(){
